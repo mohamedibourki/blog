@@ -1,10 +1,7 @@
-import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { Register } from './pages/register'
+import { Register } from "./pages/register";
 
-
-function App() {
-
+export const App = () => {
   return (
     <>
       <BrowserRouter>
@@ -17,7 +14,5 @@ function App() {
         </Routes>
       </BrowserRouter>
     </>
-  )
+  );
 }
-
-export default App

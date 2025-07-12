@@ -8,14 +8,19 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  username    String
-  email       String   @unique
-  displayName String?
-  createdAt   DateTime @default(now())
-  bio         String?
-  avatarUrl   String?
-  isActive    Boolean  @default(true)
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  username          String
+  email             String    @unique
+  password          String?
+  displayName       String?
+  bio               String?
+  avatarUrl         String?
+  isActive          Boolean   @default(true)
+  googleId          String?
+  profilePicture    String?
+  resetToken        String?
+  resetTokenExpires DateTime?
+  hashedRefreshToken String?
 
   posts           Post[]
   comments        Comment[]
@@ -31,6 +36,8 @@ model User {
   reportsSent     Report[]       @relation("Reporter")
   reportsReceived Report[]       @relation("ReportedUser")
   userRoles       UserRole[]
+
+  createdAt DateTime @default(now())
 }
 
 model Post {
