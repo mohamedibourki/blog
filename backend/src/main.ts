@@ -1,23 +1,47 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
+import * as compression from 'compression';
+import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+  const app = await NestFactory.create(AppModule, { 
     abortOnError: false,
+    logger: ['error', 'warn', 'log', 'debug', 'verbose']
   });
-    // Enable CORS with specific origin for better security
-  app.enableCors();
+  const configService = app.get(ConfigService);
+  const logger = new Logger('Bootstrap');
 
-  // Use a global pipe for validation
+  // Enable global validation pipe to ensure all incoming data is properly validated and transformed.
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Strip away properties that do not have any decorators
-      forbidNonWhitelisted: true, // Throw an error if non-whitelisted values are provided
-      transform: true, // Automatically transform payloads to be objects typed according to their DTO classes
-    }),
-  );
-  await app.listen(process.env.PORT ?? 3000);
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    })
+  )
+
+  // Enable helmet for security headers.
+  app.use(helmet());
+
+  // Enable cookie parser for parsing cookies.
+  app.use(cookieParser());
+
+  // Enable compression for performance.
+  app.use(compression());
+
+  // Set global prefix for all routes.
+  app.setGlobalPrefix('api');
+
+  // Enable CORS.
+  app.enableCors();
+
+  // Start the server.
+  await app.listen(configService.get<number>('PORT') ?? 3000, () => {
+    logger.log(`Server is running on: ${app.getUrl()}`);
+  });
 }
-void bootstrap();
+bootstrap();

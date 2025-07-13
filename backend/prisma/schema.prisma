@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -7,242 +8,69 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id                String    @id @default(auto()) @map("_id") @db.ObjectId
-  username          String
-  email             String    @unique
-  password          String?
-  displayName       String?
-  bio               String?
-  avatarUrl         String?
-  isActive          Boolean   @default(true)
-  googleId          String?
-  profilePicture    String?
-  resetToken        String?
-  resetTokenExpires DateTime?
-  hashedRefreshToken String?
+// blog-project
 
-  posts           Post[]
-  comments        Comment[]
-  likes           PostLike[]     @relation("UserPostLikes")
-  commentLikes    CommentLike[]  @relation("UserCommentLikes")
-  bookmarks       Bookmark[]
-  views           PostView[]
-  profile         UserProfile?
-  revisions       PostRevision[]
-  notifications   Notification[]
-  followers       Follower[]     @relation("UserFollowers")
-  following       Follower[]     @relation("UserFollowing")
-  reportsSent     Report[]       @relation("Reporter")
-  reportsReceived Report[]       @relation("ReportedUser")
-  userRoles       UserRole[]
+model User {
+  id       String  @id @default(auto()) @map("_id") @db.ObjectId
+  username String  @unique
+  email    String  @unique
+  password String?
+  avatar   String?
+  address  String?
+  phone    String?
+  age      Int?
+  gender   String?
+  bio      String?
+
+  // verification
+  verificationToken       String?
+  verificationTokenExpiry DateTime?
+  isVerified              Boolean   @default(false)
+
+  // google auth
+  googleId String?
+
+  // reset password
+  resetToken       String?
+  resetTokenExpiry DateTime?
+
+  posts    Post[]
+  comments Comment[]
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Post {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId        String   @db.ObjectId
-  title         String
-  content       String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  status        String
-  categoryId    String?  @db.ObjectId
-  summary       String?
-  coverImageUrl String?
-  isFeatured    Boolean  @default(false)
-  viewCount     Int      @default(0)
+  id      String  @id @default(auto()) @map("_id") @db.ObjectId
+  title   String
+  content String
+  image   String?
+  views   Int     @default(0)
+  likes   Int     @default(0)
 
-  author    User           @relation(fields: [userId], references: [id])
-  comments  Comment[]
-  likes     PostLike[]     @relation("PostLikes")
-  tags      PostTag[]
-  bookmarks Bookmark[]
-  views     PostView[]
-  revisions PostRevision[]
-  category  Category?      @relation(fields: [categoryId], references: [id])
-  reports   Report[]
+  authorId String @db.ObjectId
+
+  author   User      @relation(fields: [authorId], references: [id])
+  comments Comment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Comment {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  postId    String   @db.ObjectId
-  userId    String   @db.ObjectId
-  content   String
-  createdAt DateTime @default(now())
-  parentId  String?  @db.ObjectId
-  isEdited  Boolean  @default(false)
+  id      String  @id @default(auto()) @map("_id") @db.ObjectId
+  content String
+  views   Int     @default(0)
+  likes   Int     @default(0)
+  image   String?
 
-  post    Post          @relation(fields: [postId], references: [id])
-  author  User          @relation(fields: [userId], references: [id])
-  parent  Comment?      @relation("CommentChildren", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  replies Comment[]     @relation("CommentChildren")
-  likes   CommentLike[] @relation("CommentLikes")
-  reports Report[]
-}
-
-model Category {
-  id          String  @id @default(auto()) @map("_id") @db.ObjectId
-  name        String
-  description String?
-  parentId    String? @db.ObjectId
-
-  posts    Post[]
-  parent   Category?  @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children Category[] @relation("CategoryChildren")
-}
-
-model Tag {
-  id          String  @id @default(auto()) @map("_id") @db.ObjectId
-  name        String
-  description String?
-  slug        String  @unique
-
-  posts PostTag[]
-}
-
-model PostLike {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  postId     String   @db.ObjectId
-  userId     String   @db.ObjectId
-  createdAt  DateTime @default(now())
-  isPositive Boolean  @default(true)
-
-  user User @relation("UserPostLikes", fields: [userId], references: [id])
-  post Post @relation("PostLikes", fields: [postId], references: [id])
-}
-
-model CommentLike {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  commentId  String   @db.ObjectId
-  userId     String   @db.ObjectId
-  createdAt  DateTime @default(now())
-  isPositive Boolean  @default(true)
-
-  user    User    @relation("UserCommentLikes", fields: [userId], references: [id])
-  comment Comment @relation("CommentLikes", fields: [commentId], references: [id])
-}
-
-model PostTag {
-  id     String @id @default(auto()) @map("_id") @db.ObjectId
   postId String @db.ObjectId
-  tagId  String @db.ObjectId
-
-  post Post @relation(fields: [postId], references: [id])
-  tag  Tag  @relation(fields: [tagId], references: [id])
-}
-
-model Bookmark {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String   @db.ObjectId
-  postId    String   @db.ObjectId
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-  post Post @relation(fields: [postId], references: [id])
-}
-
-model PostView {
-  id       String   @id @default(auto()) @map("_id") @db.ObjectId
-  postId   String   @db.ObjectId
-  userId   String   @db.ObjectId
-  viewedAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-  post Post @relation(fields: [postId], references: [id])
-}
-
-model UserProfile {
-  id          String  @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String  @unique @db.ObjectId
-  website     String?
-  location    String?
-  bio         String?
-  socialLinks String?
-
-  user User @relation(fields: [userId], references: [id])
-}
-
-model PostRevision {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  postId    String   @db.ObjectId
-  userId    String   @db.ObjectId
-  content   String
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-  post Post @relation(fields: [postId], references: [id])
-}
-
-model Notification {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String   @db.ObjectId
-  type      String
-  message   String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-}
-
-model Follower {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId     String   @db.ObjectId
-  followerId String   @db.ObjectId
-  createdAt  DateTime @default(now())
-
-  user     User @relation("UserFollowers", fields: [userId], references: [id])
-  follower User @relation("UserFollowing", fields: [followerId], references: [id])
-}
-
-model Report {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  reporterId     String   @db.ObjectId
-  reportedUserId String   @db.ObjectId
-  postId         String?  @db.ObjectId
-  commentId      String?  @db.ObjectId
-  reason         String
-  createdAt      DateTime @default(now())
-
-  reporter     User     @relation("Reporter", fields: [reporterId], references: [id])
-  reportedUser User     @relation("ReportedUser", fields: [reportedUserId], references: [id])
-  post         Post?    @relation(fields: [postId], references: [id])
-  comment      Comment? @relation(fields: [commentId], references: [id])
-}
-
-// Role-based Access Control
-model Role {
-  id          String  @id @default(auto()) @map("_id") @db.ObjectId
-  name        String  @unique
-  description String?
-
-  userRoles   UserRole[]
-  permissions RolePermission[]
-}
-
-model Permission {
-  id          String  @id @default(auto()) @map("_id") @db.ObjectId
-  name        String  @unique
-  description String?
-
-  roles RolePermission[]
-}
-
-model UserRole {
-  id     String @id @default(auto()) @map("_id") @db.ObjectId
   userId String @db.ObjectId
-  roleId String @db.ObjectId
 
+  post Post @relation(fields: [postId], references: [id])
   user User @relation(fields: [userId], references: [id])
-  role Role @relation(fields: [roleId], references: [id])
-}
 
-model RolePermission {
-  id           String @id @default(auto()) @map("_id") @db.ObjectId
-  roleId       String @db.ObjectId
-  permissionId String @db.ObjectId
-
-  role       Role       @relation(fields: [roleId], references: [id])
-  permission Permission @relation(fields: [permissionId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

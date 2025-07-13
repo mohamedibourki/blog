@@ -2,120 +2,172 @@ import {
   Controller,
   Post,
   Body,
-  Req,
   Res,
-  Param,
+  HttpCode,
+  HttpStatus,
   Get,
   UseGuards,
-}
-from '@nestjs/common';
-import { Request, Response } from 'express';
-import { ConfigService } from '@nestjs/config';
+  Req,
+  Query,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
+import { AuthGuard } from '@nestjs/passport';
+import { ForgotPasswordDto } from './dto/forget-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-
-import { ForgetPasswordDto } from './dto/forget-password.dto';
-import { AccessTokenGuard } from './guards/access-token.guard';
-import { GoogleAuthGuard } from './guards/google-auth.guard';
-import { RefreshTokenGuard } from './guards/refresh-token.guard';
-
-
 
 @Controller('auth')
 export class AuthController {
-  @Get('google')
-  @UseGuards(GoogleAuthGuard)
-  googleLogin() {}
+  constructor(private readonly authService: AuthService) {}
 
-  @Get('google/callback')
-  @UseGuards(GoogleAuthGuard)
-  async googleLoginCallback(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    const { accessToken, refreshToken, user } = await this.authService.socialLogin(req.user);
-    this.setAuthCookies(res, accessToken, refreshToken);
-    return { user };
-  }
+  @Post('register')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 60 * 5 * 1000,
+    },
+  })
+  async register(@Body() registerDto: RegisterDto, @Res() res: Response) {
+    const result = await this.authService.register(registerDto);
+    const { accessToken, refreshToken, ...rest } = result;
 
-  constructor(
-    private readonly authService: AuthService,
-    private readonly configService: ConfigService,
-  ) {}
-
-  private setAuthCookies(
-    res: Response,
-    accessToken: string,
-    refreshToken: string,
-  ) {
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
-      secure: this.configService.get<string>('NODE_ENV') === 'production',
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      secure: true,
+      sameSite: 'strict' as const,
+      maxAge: 60 * 60 * 15 * 1000,
     });
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: this.configService.get<string>('NODE_ENV') === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      secure: true,
+      sameSite: 'strict' as const,
+      maxAge: 60 * 60 * 24 * 7 * 1000,
     });
-  }
 
-  @Post('register')
-  async register(
-    @Body() dto: RegisterDto,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const { accessToken, refreshToken, user } = await this.authService.register(dto);
-    this.setAuthCookies(res, accessToken, refreshToken);
-    return { user };
+    return res.status(201).json({ ...rest });
   }
 
   @Post('login')
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const { accessToken, refreshToken, user } = await this.authService.login(dto);
-    this.setAuthCookies(res, accessToken, refreshToken);
-    return { user };
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 60 * 5 * 1000,
+    },
+  })
+  async login(@Body() loginDto: LoginDto, @Res() res: Response) {
+    const result = await this.authService.login(loginDto);
+    const { accessToken, refreshToken, ...rest } = result;
+
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict' as const,
+      maxAge: 60 * 60 * 15 * 1000,
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict' as const,
+      maxAge: 60 * 60 * 24 * 7 * 1000,
+    });
+
+    return res.status(200).json({ ...rest });
   }
 
-  @UseGuards(RefreshTokenGuard)
-  @Get('refresh')
-  async refreshTokens(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    const { sub, refreshToken } = req.user;
-    const { accessToken, refreshToken: newRefreshToken, user } = await this.authService.refreshTokens(sub, refreshToken);
-    this.setAuthCookies(res, accessToken, newRefreshToken);
-    return { user };
-  }
-
-  @UseGuards(AccessTokenGuard)
   @Post('logout')
-  async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    await this.authService.logout(req.user.sub);
+  @HttpCode(HttpStatus.OK)
+  logout(@Res() res: Response) {
     res.clearCookie('accessToken');
     res.clearCookie('refreshToken');
-    return { message: 'Logout successful' };
+
+    return res.status(200).json({ message: 'User logged out successfully' });
   }
 
+  // google auth
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  googleLogin() {}
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  async googleLoginCallback(@Req() req: Request, @Res() res: Response) {
+    const result = await this.authService.googleLoginCallback(req as any);
+    const { accessToken, refreshToken, ...rest } = result;
+
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict' as const,
+      maxAge: 60 * 60 * 15 * 1000,
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict' as const,
+      maxAge: 60 * 60 * 24 * 7 * 1000,
+    });
+
+    return res.status(200).json({ ...rest });
+  }
+
+  // verify email
+  @Post('verify-email')
+  verifyEmail(@Query('token') token: string) {
+    return this.authService.verifyEmail(token);
+  }
+
+  // forget password
   @Post('forget-password')
-  async forgetPassword(@Body() dto: ForgetPasswordDto) {
-    return this.authService.forgetPassword(dto.email);
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: {
+      limit: 1,
+      ttl: 60 * 1000,
+    },
+  })
+  forgetPassword(@Body() forgetPasswordDto: ForgotPasswordDto) {
+    return this.authService.forgetPassword(forgetPasswordDto);
   }
 
-  @Post('reset-password/:token')
-  async resetPassword(
-    @Param('token') token: string,
-    @Body() dto: ResetPasswordDto,
+  // reset password
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  resetPassword(
+    @Query('token') token: string,
+    @Body() resetPasswordDto: ResetPasswordDto,
   ) {
-    return this.authService.resetPassword(token, dto);
+    return this.authService.resetPassword(token, resetPasswordDto);
   }
 
-  @UseGuards(AccessTokenGuard)
-  @Get('profile')
-  getProfile(@Req() req: any) {
-    return req.user;
+  // refresh token
+  @Post('refresh-token')
+  @HttpCode(HttpStatus.OK)
+  async refreshToken(@Req() req: Request, @Res() res: Response) {
+    const result = await this.authService.refreshToken(req as any);
+    const { accessToken, refreshToken, ...rest } = result;
+
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict' as const,
+      maxAge: 60 * 60 * 15 * 1000,
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict' as const,
+      maxAge: 60 * 60 * 24 * 7 * 1000,
+    });
+
+    return res.status(200).json({ ...rest });
   }
 }
-
-

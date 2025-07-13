@@ -1,211 +1,358 @@
 import {
-  BadRequestException,
-  ForbiddenException,
   Injectable,
+  HttpException,
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+  HttpStatus,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import * as argon2 from 'argon2';
-import * as crypto from 'crypto';
-import { EmailService } from '../email/email.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import * as argon2 from 'argon2';
+import { JwtService } from '@nestjs/jwt';
+import { randomBytes } from 'crypto';
+import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
+import { ConfigService } from '@nestjs/config';
+import { ForgotPasswordDto } from './dto/forget-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { Profile } from 'passport';
+import { Request } from 'express';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly emailService: EmailService,
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+    private readonly configService: ConfigService,
   ) {}
 
-  private async _updateRefreshTokenHash(userId: string, refreshToken: string) {
-    const hash = await argon2.hash(refreshToken);
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { hashedRefreshToken: hash },
-    });
-  }
+  generateTokens(userId: string): {
+    accessToken: string;
+    refreshToken: string;
+  } {
+    const payload = { sub: userId };
 
-  private async _generateTokens(userId: string, email: string) {
-    const accessToken = this.jwtService.sign(
-      { sub: userId, email },
-      { expiresIn: '15m' },
-    );
-    const refreshToken = this.jwtService.sign(
-      { sub: userId, email },
-      { expiresIn: '7d' },
-    );
+    const accessToken = this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('JWT_SECRET'),
+      expiresIn: '15m',
+    });
+
+    const refreshToken = this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('JWT_SECRET'),
+      expiresIn: '7d',
+    });
+
     return { accessToken, refreshToken };
   }
 
-  async resetPassword(token: string, dto: ResetPasswordDto) {
-    const user = await this.prisma.user.findFirst({
-      where: { resetToken: token, resetTokenExpires: { gt: new Date() } },
-    });
-
-    if (!user) {
-      throw new BadRequestException('Invalid or expired token');
-    }
-
-    const hashedPassword = await argon2.hash(dto.password);
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        resetToken: null,
-        resetTokenExpires: null,
-      },
-    });
-
-    return { message: 'Password has been reset successfully.' };
-  }
-
-  async forgetPassword(email: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (user) {
-      const token = crypto.randomBytes(32).toString('hex');
-      const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { resetToken: token, resetTokenExpires: expires },
+  async register(registerDto: RegisterDto) {
+    try {
+      const { username, email, password } = registerDto;
+      const existingUser = await this.prisma.user.findFirst({
+        where: {
+          OR: [{ email }, { username }],
+        },
       });
 
-      const link = `${process.env.FRONTEND_URL}/reset-password/${token}`;
-      await this.emailService.sendEmail(
-        user.username,
-        user.email,
-        'Reset Your Password',
-        `Please use the following link to reset your password: ${link}`,
+      if (existingUser) {
+        if (existingUser.email === email) {
+          throw new HttpException('Email already registered', 400);
+        }
+        if (existingUser.username === username) {
+          throw new HttpException('Username already taken', 400);
+        }
+      }
+
+      const hashedPassword = await argon2.hash(password);
+
+      const verificationToken = randomBytes(32).toString('hex');
+      const verificationTokenExpiry = new Date(Date.now() + 60 * 15 * 1000);
+
+      const newUser = await this.prisma.user.create({
+        data: {
+          username,
+          email,
+          password: hashedPassword,
+          verificationToken,
+          verificationTokenExpiry,
+        },
+      });
+
+      await this.mailService.sendVerificationEmail(
+        newUser.email,
+        verificationToken,
+      );
+
+      const { accessToken, refreshToken } = this.generateTokens(newUser.id);
+
+      return {
+        message: 'User registered successfully',
+        user: {
+          id: newUser.id,
+          username: newUser.username,
+          email: newUser.email,
+          isVerified: newUser.isVerified,
+        },
+        accessToken,
+        refreshToken,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async login(loginDto: LoginDto) {
+    try {
+      const { email, password } = loginDto;
+      const user = await this.prisma.user.findUnique({
+        where: {
+          email,
+        },
+      });
+      if (!user || !user.password)
+        throw new UnauthorizedException('Invalid credentials');
+
+      const isPasswordValid = await argon2.verify(user.password, password);
+      if (!isPasswordValid)
+        throw new UnauthorizedException('Invalid credentials');
+
+      if (!user.isVerified)
+        throw new UnauthorizedException('Invalid credentials');
+
+      const { accessToken, refreshToken } = this.generateTokens(user.id);
+
+      return {
+        message: 'User logged in successfully',
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          isVerified: user.isVerified,
+        },
+        accessToken,
+        refreshToken,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async googleLoginCallback(req: Request) {
+    try {
+      if (!req.user) {
+        throw new UnauthorizedException('No user data from Google');
+      }
+
+      const { profile } = req.user as any;
+      const { id, name, emails, photos } = profile;
+
+      if (!emails?.[0]?.value) {
+        throw new BadRequestException('No email provided by Google');
+      }
+
+      const email = emails[0].value;
+      const username = `${name?.givenName || 'user'}_${Math.random().toString(36).substring(2, 9)}`;
+      const avatar = photos?.[0]?.value || null;
+
+      console.log(email, username, avatar, id);
+
+      let user = await this.prisma.user.findFirst({
+        where: {
+          OR: [{ email }, { googleId: id }],
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          googleId: true,
+          isVerified: true,
+          avatar: true,
+        } as const,
+      });
+
+      console.log(user);
+
+      if (!user) {
+        user = await this.prisma.user.create({
+          data: {
+            username,
+            email,
+            avatar,
+            googleId: id,
+            isVerified: true,
+          },
+        });
+      } else if (!user.googleId) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            googleId: id,
+            isVerified: true,
+            ...(!user.avatar && { avatar }),
+          },
+        });
+      }
+
+      const { accessToken, refreshToken } = this.generateTokens(user.id);
+
+      return {
+        message: 'User logged in successfully',
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          avatar: user.avatar,
+          isVerified: user.isVerified,
+        },
+        accessToken,
+        refreshToken,
+      };
+    } catch (error) {
+      console.error('Google login error:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Authentication failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
-
-    return {
-      message:
-        'If a user with that email exists, a password reset link has been sent.',
-    };
   }
 
-  async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
-
-    if (!user || !user.password || !(await argon2.verify(user.password, dto.password))) {
-      throw new BadRequestException('Invalid credentials');
-    }
-
-    const { accessToken, refreshToken } = await this._generateTokens(
-      user.id,
-      user.email,
-    );
-    await this._updateRefreshTokenHash(user.id, refreshToken);
-
-    return { accessToken, refreshToken, user };
-  }
-
-  async register(dto: RegisterDto) {
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
-
-    if (existingUser) {
-      throw new BadRequestException('Email is already in use');
-    }
-
-    const hashedPassword = await argon2.hash(dto.password);
-
-    const newUser = await this.prisma.user.create({
-      data: {
-        username: dto.username,
-        email: dto.email,
-        password: hashedPassword,
-      },
-    });
-
-    const { accessToken, refreshToken } = await this._generateTokens(
-      newUser.id,
-      newUser.email,
-    );
-    await this._updateRefreshTokenHash(newUser.id, refreshToken);
-
-    return { accessToken, refreshToken, user: newUser };
-  }
-
-  async refreshTokens(userId: string, rt: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user || !user.hashedRefreshToken) {
-      throw new ForbiddenException('Access Denied');
-    }
-
-    const rtMatches = await argon2.verify(user.hashedRefreshToken, rt);
-    if (!rtMatches) {
-      throw new ForbiddenException('Access Denied');
-    }
-
-    const { accessToken, refreshToken } = await this._generateTokens(
-      user.id,
-      user.email,
-    );
-    await this._updateRefreshTokenHash(user.id, refreshToken);
-
-    return { accessToken, refreshToken, user };
-  }
-
-  async socialLogin(user: any) {
-    const { accessToken, refreshToken } = await this._generateTokens(
-      user.id,
-      user.email,
-    );
-    await this._updateRefreshTokenHash(user.id, refreshToken);
-
-    return { accessToken, refreshToken, user };
-  }
-
-  async validateGoogleUser(profile: Profile) {
-    if (!profile || !profile.emails || profile.emails.length === 0) {
-      throw new BadRequestException('No email found in Google profile');
-    }
-
-    const email = profile.emails[0].value;
-    let user = await this.prisma.user.findUnique({ where: { email } });
-
-    if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          email,
-          username: profile.displayName || email,
-          displayName: profile.displayName,
-          avatarUrl: profile.photos?.[0]?.value,
+  async verifyEmail(token: string) {
+    try {
+      const user = await this.prisma.user.findFirst({
+        where: {
+          verificationToken: token,
+          verificationTokenExpiry: {
+            gte: new Date(),
+          },
         },
       });
+      if (!user) throw new BadRequestException('Invalid token');
+
+      await this.prisma.user.update({
+        where: {
+          email: user.email,
+        },
+        data: {
+          isVerified: true,
+          verificationToken: null,
+          verificationTokenExpiry: null,
+        },
+      });
+
+      return {
+        message: 'Email verified successfully',
+      };
+    } catch (error) {
+      throw error;
     }
-    return user;
   }
 
-  async logout(userId: string) {
-    await this.prisma.user.updateMany({
-      where: {
-        id: userId,
-        hashedRefreshToken: {
-          not: null,
+  async forgetPassword(forgetPasswordDto: ForgotPasswordDto) {
+    try {
+      const { email } = forgetPasswordDto;
+
+      const user = await this.prisma.user.findUnique({
+        where: {
+          email,
         },
-      },
-      data: {
-        hashedRefreshToken: null,
-      },
-    });
-    return { message: 'Logout successful' };
+      });
+      if (!user) throw new NotFoundException('User not found');
+
+      const resetToken = randomBytes(32).toString('hex');
+      const resetTokenExpiry = new Date(Date.now() + 60 * 15 * 1000);
+
+      await this.prisma.user.update({
+        where: {
+          email,
+        },
+        data: {
+          resetToken,
+          resetTokenExpiry,
+        },
+      });
+
+      await this.mailService.sendPasswordResetEmail(email, resetToken);
+
+      return {
+        message: 'Password reset email sent successfully',
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async resetPassword(token: string, resetPasswordDto: ResetPasswordDto) {
+    try {
+      const { password } = resetPasswordDto;
+
+      const user = await this.prisma.user.findFirst({
+        where: {
+          resetToken: token,
+          resetTokenExpiry: {
+            gte: new Date(),
+          },
+        },
+      });
+      if (!user) throw new BadRequestException('Invalid token');
+
+      const hashedPassword = await argon2.hash(password);
+
+      await this.prisma.user.update({
+        where: {
+          email: user.email,
+        },
+        data: {
+          password: hashedPassword,
+          resetToken: null,
+          resetTokenExpiry: null,
+        },
+      });
+
+      return {
+        message: 'Password reset successfully',
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async refreshToken(req: Request) {
+    try {
+      const refreshTokenSaved = req.cookies.refreshToken;
+      if (!refreshTokenSaved)
+        throw new UnauthorizedException('Invalid credentials');
+
+      const decoded = this.jwtService.verify(refreshTokenSaved, {
+        secret: this.configService.get<string>('JWT_SECRET'),
+      });
+      if (!decoded) throw new UnauthorizedException('Invalid credentials');
+
+      const user = await this.prisma.user.findUnique({
+        where: {
+          id: decoded.sub,
+        },
+      });
+      if (!user) throw new UnauthorizedException('Invalid credentials');
+
+      const { accessToken, refreshToken } = this.generateTokens(user.id);
+
+      return {
+        message: 'User logged in successfully',
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          isVerified: user.isVerified,
+        },
+        accessToken,
+        refreshToken,
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 }
-
