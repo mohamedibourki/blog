@@ -16,38 +16,28 @@ import { LoginDto } from './dto/login.dto';
 import { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '@nestjs/passport';
-import { ForgotPasswordDto } from './dto/forget-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('register')
   @HttpCode(HttpStatus.OK)
   @Throttle({
     default: {
-      limit: 5,
+      limit: 500034234,
       ttl: 60 * 5 * 1000,
     },
   })
   async register(@Body() registerDto: RegisterDto, @Res() res: Response) {
     const result = await this.authService.register(registerDto);
-    const { accessToken, refreshToken, ...rest } = result;
-
-    res.cookie('accessToken', accessToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict' as const,
-      maxAge: 60 * 60 * 15 * 1000,
-    });
-
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict' as const,
-      maxAge: 60 * 60 * 24 * 7 * 1000,
-    });
+    const { ...rest } = result;
 
     return res.status(201).json({ ...rest });
   }
@@ -56,7 +46,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({
     default: {
-      limit: 5,
+      limit: 10000000,
       ttl: 60 * 5 * 1000,
     },
   })
@@ -66,15 +56,15 @@ export class AuthController {
 
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'strict' as const,
+      secure: false,
+      sameSite: 'lax' as const,
       maxAge: 60 * 60 * 15 * 1000,
     });
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'strict' as const,
+      secure: false,
+      sameSite: 'lax' as const,
       maxAge: 60 * 60 * 24 * 7 * 1000,
     });
 
@@ -103,29 +93,49 @@ export class AuthController {
 
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'strict' as const,
+      secure: false,
+      sameSite: 'lax' as const,
       maxAge: 60 * 60 * 15 * 1000,
     });
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'strict' as const,
+      secure: false,
+      sameSite: 'lax' as const,
+      maxAge: 60 * 60 * 24 * 7 * 1000,
+    });
+
+    return res.redirect(
+      `${this.configService.get<string>('CLIENT_URL') || 'http://localhost:3000'}/dashboard`,
+    );
+  }
+
+  // verify email
+  @Get('verify-email')
+  @HttpCode(HttpStatus.OK)
+  async verifyEmail(@Query('token') token: string, @Res() res: Response) {
+    const result = await this.authService.verifyEmail(token);
+    const { accessToken, refreshToken, ...rest } = result;
+
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax' as const,
+      maxAge: 60 * 60 * 15 * 1000,
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax' as const,
       maxAge: 60 * 60 * 24 * 7 * 1000,
     });
 
     return res.status(200).json({ ...rest });
   }
 
-  // verify email
-  @Post('verify-email')
-  verifyEmail(@Query('token') token: string) {
-    return this.authService.verifyEmail(token);
-  }
-
-  // forget password
-  @Post('forget-password')
+  // forgot password
+  @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @Throttle({
     default: {
@@ -133,8 +143,14 @@ export class AuthController {
       ttl: 60 * 1000,
     },
   })
-  forgetPassword(@Body() forgetPasswordDto: ForgotPasswordDto) {
-    return this.authService.forgetPassword(forgetPasswordDto);
+  forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(forgotPasswordDto);
+  }
+
+  @Get('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async verifyResetPasswordToken(@Query('token') token: string) {
+    return this.authService.verifyResetPasswordToken(token);
   }
 
   // reset password
@@ -156,18 +172,26 @@ export class AuthController {
 
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'strict' as const,
+      secure: false,
+      sameSite: 'lax' as const,
       maxAge: 60 * 60 * 15 * 1000,
     });
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'strict' as const,
+      secure: false,
+      sameSite: 'lax' as const,
       maxAge: 60 * 60 * 24 * 7 * 1000,
     });
 
     return res.status(200).json({ ...rest });
+  }
+
+  // me
+  @Get('me')
+  @HttpCode(HttpStatus.OK)
+  getMe(@Req() req: Request) {
+    const result = this.authService.getMe(req as any);
+    return result;
   }
 }

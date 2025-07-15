@@ -14,7 +14,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { ConfigService } from '@nestjs/config';
-import { ForgotPasswordDto } from './dto/forget-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Request } from 'express';
 
@@ -84,8 +84,6 @@ export class AuthService {
         verificationToken,
       );
 
-      const { accessToken, refreshToken } = this.generateTokens(newUser.id);
-
       return {
         message: 'User registered successfully',
         user: {
@@ -94,8 +92,6 @@ export class AuthService {
           email: newUser.email,
           isVerified: newUser.isVerified,
         },
-        accessToken,
-        refreshToken,
       };
     } catch (error) {
       throw error;
@@ -110,15 +106,16 @@ export class AuthService {
           email,
         },
       });
-      if (!user || !user.password)
-        throw new UnauthorizedException('Invalid credentials');
+      const authError = new UnauthorizedException('Invalid email or password');
+      if (!user || !user.password) throw authError;
 
       const isPasswordValid = await argon2.verify(user.password, password);
-      if (!isPasswordValid)
-        throw new UnauthorizedException('Invalid credentials');
+      if (!isPasswordValid) throw authError;
 
       if (!user.isVerified)
-        throw new UnauthorizedException('Invalid credentials');
+        throw new UnauthorizedException(
+          'Please verify your email before logging in',
+        );
 
       const { accessToken, refreshToken } = this.generateTokens(user.id);
 
@@ -155,8 +152,6 @@ export class AuthService {
       const username = `${name?.givenName || 'user'}_${Math.random().toString(36).substring(2, 9)}`;
       const avatar = photos?.[0]?.value || null;
 
-      console.log(email, username, avatar, id);
-
       let user = await this.prisma.user.findFirst({
         where: {
           OR: [{ email }, { googleId: id }],
@@ -170,8 +165,6 @@ export class AuthService {
           avatar: true,
         } as const,
       });
-
-      console.log(user);
 
       if (!user) {
         user = await this.prisma.user.create({
@@ -209,14 +202,7 @@ export class AuthService {
         refreshToken,
       };
     } catch (error) {
-      console.error('Google login error:', error);
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        'Authentication failed',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw error;
     }
   }
 
@@ -243,17 +229,21 @@ export class AuthService {
         },
       });
 
+      const { accessToken, refreshToken } = this.generateTokens(user.id);
+
       return {
         message: 'Email verified successfully',
+        accessToken,
+        refreshToken,
       };
     } catch (error) {
       throw error;
     }
   }
 
-  async forgetPassword(forgetPasswordDto: ForgotPasswordDto) {
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
     try {
-      const { email } = forgetPasswordDto;
+      const { email } = forgotPasswordDto;
 
       const user = await this.prisma.user.findUnique({
         where: {
@@ -282,6 +272,27 @@ export class AuthService {
       };
     } catch (error) {
       throw error;
+    }
+  }
+
+  async verifyResetPasswordToken(token: string) {
+    try {
+      const user = await this.prisma.user.findFirst({
+        where: {
+          resetToken: token,
+          resetTokenExpiry: {
+            gt: new Date(),
+          },
+        },
+      });
+
+      if (!user) {
+        throw new NotFoundException('Invalid or expired reset token');
+      }
+
+      return { valid: true, email: user.email };
+    } catch (error) {
+      throw new BadRequestException('Invalid or expired reset token');
     }
   }
 
@@ -350,6 +361,32 @@ export class AuthService {
         },
         accessToken,
         refreshToken,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async getMe(req: Request) {
+    try {
+      const user = req.user as any;
+      if (!user) throw new UnauthorizedException('Invalid credentials');
+
+      const userFromDb = await this.prisma.user.findUnique({
+        where: {
+          id: user.id,
+        },
+      });
+      if (!userFromDb) throw new UnauthorizedException('Invalid credentials');
+
+      return {
+        message: 'User logged in successfully',
+        user: {
+          id: userFromDb.id,
+          username: userFromDb.username,
+          email: userFromDb.email,
+          isVerified: userFromDb.isVerified,
+        },
       };
     } catch (error) {
       throw error;

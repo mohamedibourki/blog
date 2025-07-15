@@ -8,9 +8,9 @@ import { ConfigService } from '@nestjs/config';
 import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { 
+  const app = await NestFactory.create(AppModule, {
     abortOnError: false,
-    logger: ['error', 'warn', 'log', 'debug', 'verbose']
+    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
   const configService = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
@@ -21,8 +21,8 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-    })
-  )
+    }),
+  );
 
   // Enable helmet for security headers.
   app.use(helmet());
@@ -37,10 +37,13 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   // Enable CORS.
-  app.enableCors();
+  app.enableCors({
+    origin: configService.get<string>('CLIENT_URL'),
+    credentials: true,
+  });
 
   // Start the server.
-  await app.listen(configService.get<number>('PORT') ?? 3000, () => {
+  await app.listen(configService.get<number>('PORT') ?? 3001, () => {
     logger.log(`Server is running on: ${app.getUrl()}`);
   });
 }
