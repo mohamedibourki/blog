@@ -352,13 +352,7 @@ export class AuthService {
       const { accessToken, refreshToken } = this.generateTokens(user.id);
 
       return {
-        message: 'User logged in successfully',
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          isVerified: user.isVerified,
-        },
+        message: 'Token refreshed successfully',
         accessToken,
         refreshToken,
       };
@@ -391,5 +385,15 @@ export class AuthService {
     } catch (error) {
       throw error;
     }
+  }
+
+  // verify token
+  verifyToken(token: string) {
+    const decoded = this.jwtService.verify(token, {
+      secret: this.configService.get<string>('JWT_SECRET'),
+    });
+
+    if (decoded) return decoded.sub;
+    return null;
   }
 }

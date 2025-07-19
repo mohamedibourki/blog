@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import {
   IconCreditCard,
@@ -6,13 +6,9 @@ import {
   IconLogout,
   IconNotification,
   IconUserCircle,
-} from "@tabler/icons-react"
+} from "@tabler/icons-react";
 
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,24 +17,37 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@/components/ui/sidebar"
+} from "@/components/ui/sidebar";
+import { POST } from "../app/(auth)/logout/actions";
+import { toast } from "sonner";
+import { redirect } from "next/navigation";
 
 export function NavUser({
   user,
 }: {
   user: {
-    name: string
-    email: string
-    avatar: string
-  }
+    name: string;
+    email: string;
+    avatar: string;
+  };
 }) {
-  const { isMobile } = useSidebar()
+  const { isMobile } = useSidebar();
+
+  const handleLogout = async () => {
+    const response = await POST();
+
+    if (response.status === 200) {
+      return true;
+    }
+
+    return false;
+  };
 
   return (
     <SidebarMenu>
@@ -98,7 +107,19 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                toast.promise(handleLogout, {
+                  loading: "Loading...",
+                  success: () => {
+                    return "Logout successfully";
+                  },
+                  error: "Error",
+                });
+
+                redirect("/login");
+              }}
+            >
               <IconLogout />
               Log out
             </DropdownMenuItem>
@@ -106,5 +127,5 @@ export function NavUser({
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  )
+  );
 }

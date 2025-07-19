@@ -168,23 +168,21 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async refreshToken(@Req() req: Request, @Res() res: Response) {
     const result = await this.authService.refreshToken(req as any);
-    const { accessToken, refreshToken, ...rest } = result;
 
-    res.cookie('accessToken', accessToken, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax' as const,
-      maxAge: 60 * 60 * 15 * 1000,
+    return res.status(200).json({
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
     });
+  }
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax' as const,
-      maxAge: 60 * 60 * 24 * 7 * 1000,
-    });
+  // verify token
+  @Post('verify-token')
+  @HttpCode(HttpStatus.OK)
+  async verifyToken(@Body() body: { token: string }, @Res() res: Response) {
+    const result = this.authService.verifyToken(body.token);
 
-    return res.status(200).json({ ...rest });
+    if (result) return res.status(200).json({ valid: true, userId: result });
+    return res.status(401).json({ valid: false, userId: null });
   }
 
   // me
