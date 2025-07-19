@@ -72,7 +72,12 @@ export class AuthController {
   }
 
   @Post('logout')
-  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: {
+      limit: 10000000,
+      ttl: 60 * 5 * 1000,
+    },
+  })
   logout(@Res() res: Response) {
     res.clearCookie('accessToken');
     res.clearCookie('refreshToken');
@@ -89,7 +94,7 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   async googleLoginCallback(@Req() req: Request, @Res() res: Response) {
     const result = await this.authService.googleLoginCallback(req as any);
-    const { accessToken, refreshToken, ...rest } = result;
+    const { accessToken, refreshToken } = result;
 
     res.cookie('accessToken', accessToken, {
       httpOnly: true,

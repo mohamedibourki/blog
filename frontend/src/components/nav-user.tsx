@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/sidebar";
 import { POST } from "../app/(auth)/logout/actions";
 import { toast } from "sonner";
-import { redirect } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export function NavUser({
   user,
@@ -38,15 +38,32 @@ export function NavUser({
   };
 }) {
   const { isMobile } = useSidebar();
+  const router = useRouter();
 
   const handleLogout = async () => {
-    const response = await POST();
+    try {
+      const response = await POST();
 
-    if (response.status === 200) {
-      return true;
+      if (response.status === 200) {
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error("Logout error:", error);
+      return false;
     }
+  };
 
-    return false;
+  const handleLogoutClick = () => {
+    toast.promise(handleLogout(), {
+      loading: "Loading...",
+      success: () => {
+        router.push("/login");
+        return "Logout successfully";
+      },
+      error: (err) => err.message,
+    });
   };
 
   return (
@@ -107,19 +124,7 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                toast.promise(handleLogout, {
-                  loading: "Loading...",
-                  success: () => {
-                    return "Logout successfully";
-                  },
-                  error: "Error",
-                });
-
-                redirect("/login");
-              }}
-            >
+            <DropdownMenuItem onClick={handleLogoutClick}>
               <IconLogout />
               Log out
             </DropdownMenuItem>

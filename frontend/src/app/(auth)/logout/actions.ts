@@ -1,8 +1,15 @@
 "use server";
 
-import { api } from "@/lib/api";
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
-export const POST = async () => {
-  const response = await api.post("/auth/logout");
-  return response;
-};
+export async function POST() {
+  const cookieStore = await cookies();
+  cookieStore.delete("accessToken");
+  cookieStore.delete("refreshToken");
+
+  return NextResponse.json(
+    { message: "User logged out successfully" },
+    { status: 200 }
+  );
+}
