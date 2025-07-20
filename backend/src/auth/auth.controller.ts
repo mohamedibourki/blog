@@ -71,19 +71,19 @@ export class AuthController {
     return res.status(200).json({ ...rest });
   }
 
-  @Post('logout')
-  @Throttle({
-    default: {
-      limit: 10000000,
-      ttl: 60 * 5 * 1000,
-    },
-  })
-  logout(@Res() res: Response) {
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken');
+  // @Post('logout')
+  // @Throttle({
+  //   default: {
+  //     limit: 10000000,
+  //     ttl: 60 * 5 * 1000,
+  //   },
+  // })
+  // logout(@Res() res: Response) {
+  //   res.clearCookie('accessToken');
+  //   res.clearCookie('refreshToken');
 
-    return res.status(200).json({ message: 'User logged out successfully' });
-  }
+  //   return res.status(200).json({ message: 'User logged out successfully' });
+  // }
 
   // google auth
   @Get('google')

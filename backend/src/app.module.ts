@@ -6,6 +6,9 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { MailModule } from './mail/mail.module';
+import { DatabaseModule } from './database/database.module';
+import { UsersModule } from './users/users.module';
+import { PostsModule } from './posts/posts.module';
 
 @Module({
   imports: [ConfigModule.forRoot({
@@ -21,6 +24,9 @@ import { MailModule } from './mail/mail.module';
     AuthModule,
     PrismaModule,
     MailModule,
+    DatabaseModule,
+    UsersModule,
+    PostsModule,
   ],
   providers: [{
     provide: APP_GUARD,

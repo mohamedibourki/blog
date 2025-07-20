@@ -44,7 +44,7 @@ export function NavUser({
     try {
       const response = await POST();
 
-      if (response.status === 200) {
+      if (response.success) {
         return true;
       }
 
